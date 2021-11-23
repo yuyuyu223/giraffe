@@ -32,7 +32,7 @@ class Trainer(BaseTrainer):
                  multi_gpu=False, fid_dict={},
                  n_eval_iterations=10,
                  overwrite_visualization=True, **kwargs):
-
+        print(multi_gpu)
         self.model = model
         self.optimizer = optimizer
         self.optimizer_d = optimizer_d

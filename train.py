@@ -83,7 +83,7 @@ else:
                      'either maximize or minimize.')
 
 # 输出文件夹不存在就新建
-if not os.path.exists(out_dir):
+if not os.path.exists(out_dir) and dist.get_rank()==0:
     os.makedirs(out_dir)
 
 # 根据配置文件读取数据集
@@ -135,15 +135,17 @@ trainer = config.get_trainer(model, optimizer, optimizer_d, cfg, device=device)
 # model checkpoint读取对象
 checkpoint_io = CheckpointIO(out_dir, model=model, optimizer=optimizer,
                              optimizer_d=optimizer_d)
+
 try:
     # 读取checkpoint
-    if dist.get_rank() == 0:
-        load_dict = checkpoint_io.load('model.pt')
-        print("Loaded model checkpoint.")
+    load_dict = checkpoint_io.load('model.pt')
+    print("Loaded model checkpoint.")
 # 找不到pt文件
 except FileExistsError:
     load_dict = dict()
     print("No model checkpoint found.")
+
+
 # 从checkpoint读取一些参数
 epoch_it = load_dict.get('epoch_it', -1)
 it = load_dict.get('it', -1)
@@ -201,8 +203,8 @@ while (True):
             logger.add_scalar(k, v, it)
         # Print output
         if print_every > 0 and (it % print_every) == 0:
-            info_txt = '[Epoch %02d] it=%03d, time=%.3f' % (
-                epoch_it, it, time.time() - t0b)
+            info_txt = '[Epoch %02d] it=%03d, time=%.3f ,pid=%d'% (
+                epoch_it, it, time.time() - t0b,dist.get_rank())
             for (k, v) in loss.items():
                 info_txt += ', %s: %.4f' % (k, v)
             logger_py.info(info_txt)
