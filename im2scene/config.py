@@ -69,7 +69,9 @@ def get_model(cfg, device=None, len_dataset=0):
         device (device): pytorch device
         dataset (dataset): dataset
     '''
+    # 获取方法名
     method = cfg['method']
+    # 根据方法名找到对应模型模块，获取模型
     model = method_dict[method].config.get_model(
         cfg, device=device, len_dataset=len_dataset)
     return model
@@ -102,8 +104,11 @@ def get_trainer(model, optimizer, optimizer_d, cfg, device):
         cfg (dict): config dictionary
         device (device): pytorch device
     '''
+    # 获取方法名
     method = cfg['method']
+    # 设置log
     set_logger(cfg)
+    # 获取指定模型的训练器
     trainer = method_dict[method].config.get_trainer(
         model, optimizer, optimizer_d, cfg, device)
     return trainer
@@ -133,17 +138,24 @@ def get_dataset(cfg, **kwargs):
         return_category (bool): whether to return model category
     '''
     # Get fields with cfg
+    # 数据集名称
     dataset_name = cfg['data']['dataset_name']
+    # 数据集位置
     dataset_folder = cfg['data']['path']
+    # 数据集分类
     categories = cfg['data']['classes']
+    # 数据集图片尺寸
     img_size = cfg['data']['img_size']
-
+    # 如果是lsun数据集
     if dataset_name == 'lsun':
+        # 调用im2scene.data.datasets中的方法读取数据集
         dataset = data.LSUNClass(dataset_folder, categories, size=img_size,
                                  random_crop=cfg['data']['random_crop'],
                                  use_tanh_range=cfg['data']['use_tanh_range'],
                                  )
+    # 如果是其他数据集
     else:
+        # 调用im2scene.data.datasets中的方法读取数据集
         dataset = data.ImagesDataset(
             dataset_folder, size=img_size,
             use_tanh_range=cfg['data']['use_tanh_range'],

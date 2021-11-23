@@ -9,3 +9,5 @@ out
 *.prof
 .nfs*
 _cache_*
+*.jpg
+*.npz
