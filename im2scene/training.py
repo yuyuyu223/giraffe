@@ -44,6 +44,9 @@ def toggle_grad(model, requires_grad):
 
 
 def compute_grad2(d_out, x_in):
+    """
+        dy/dx
+    """
     batch_size = x_in.size(0)
     grad_dout = autograd.grad(
         outputs=d_out.sum(), inputs=x_in,
@@ -56,11 +59,12 @@ def compute_grad2(d_out, x_in):
 
 
 def update_average(model_tgt, model_src, beta):
+    # 关闭两个model的自动微分
     toggle_grad(model_src, False)
     toggle_grad(model_tgt, False)
 
     param_dict_src = dict(model_src.named_parameters())
-
+    # 按比例将target model的参数更新
     for p_name, p_tgt in model_tgt.named_parameters():
         p_src = param_dict_src[p_name]
         assert(p_src is not p_tgt)

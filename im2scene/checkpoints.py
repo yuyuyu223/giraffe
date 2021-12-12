@@ -19,12 +19,14 @@ class CheckpointIO(object):
         self.module_dict = kwargs
         self.local_rank=-1
         self.checkpoint_dir = checkpoint_dir
+        # checkpoint_dir不存在去创建
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
 
     def register_modules(self, **kwargs):
         ''' Registers modules in current module dictionary.
         '''
+        # 更新模组字典
         self.module_dict.update(kwargs)
 
     def save(self, filename, **kwargs):
@@ -33,24 +35,32 @@ class CheckpointIO(object):
         Args:
             filename (str): name of output file
         '''
+        # 如果不是绝对路径，生成绝对路径
         if not os.path.isabs(filename):
             filename = os.path.join(self.checkpoint_dir, filename)
 
         outdict = kwargs
         for k, v in self.module_dict.items():
             outdict[k] = v.state_dict()
+        # 保存模型参数
         torch.save(outdict, filename)
 
     def backup_model_best(self, filename, **kwargs):
+        # 如果不是绝对路径，生成绝对路径
         if not os.path.isabs(filename):
             filename = os.path.join(self.checkpoint_dir, filename)
+        # 如果最佳模型文件存在
         if os.path.exists(filename):
-            # Backup model
+            # 生成备份目录路径
             backup_dir = os.path.join(self.checkpoint_dir, 'backup_model_best')
+            # 路径不存在就创建
             if not os.path.exists(backup_dir):
                 os.makedirs(backup_dir)
+            # 获取时间戳
             ts = datetime.datetime.now().timestamp()
+            # 生成备份文件路径
             filename_backup = os.path.join(backup_dir, '%s.pt' % ts)
+            # 拷贝
             shutil.copy(filename, filename_backup)
 
     def load(self, filename):
@@ -59,8 +69,10 @@ class CheckpointIO(object):
         Args:
             filename (str): name of saved module dictionary
         '''
+        # 如果文件路径是url
         if is_url(filename):
             return self.load_url(filename)
+        # 如果文件路径是本地文件
         else:
             return self.load_file(filename)
 
@@ -70,13 +82,14 @@ class CheckpointIO(object):
         Args:
             filename (str): name of saved module dictionary
         '''
-
+        # 如果不是绝对路径，生成绝对路径
         if not os.path.isabs(filename):
             filename = os.path.join(self.checkpoint_dir, filename)
-
+        # 如果文件存在
         if os.path.exists(filename):
             print(filename)
             print('=> Loading checkpoint from local file...')
+            # 加载模型参数
             state_dict = torch.load(filename)
             scalars = self.parse_state_dict(state_dict)
             return scalars
@@ -91,6 +104,7 @@ class CheckpointIO(object):
         '''
         print(url)
         print('=> Loading checkpoint from url...')
+        # 用pytorch model zoo下载模型
         state_dict = model_zoo.load_url(url, progress=True)
         scalars = self.parse_state_dict(state_dict)
         return scalars

@@ -51,6 +51,9 @@ class ResnetBlockFC(nn.Module):
 
 
 class ResnetBlock(nn.Module):
+    """
+        ResNet残差块
+    """
     def __init__(self, fin, fout, fhidden=None, is_bias=True):
         super().__init__()
         # Attributes

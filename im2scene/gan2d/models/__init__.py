@@ -20,7 +20,7 @@ class GAN2D(nn.Module):
     def __init__(self, device=None, discriminator=None, generator=None,
                  generator_test=None, **kwargs):
         super().__init__()
-
+        # 将生成器和判别器放到cpu/gpu上
         if discriminator is not None:
             self.discriminator = discriminator.to(device)
         else:
@@ -36,18 +36,24 @@ class GAN2D(nn.Module):
             self.generator_test = None
 
     def forward(self, *args, **kwargs):
+        # gen赋值为生成器
         gen = self.generator_test
         if gen is None:
             gen = self.generator
+        # 传入None，代表会输入随机噪声
         images = gen(None)
+        # [-1,1]-->[0,1]
         images = images * 0.5 + 0.5  # scale to [0, 1]
         return images
 
     def generate_test_images(self):
+        # gen赋值为生成器
         gen = self.generator_test
         if gen is None:
             gen = self.generator
+        # 传入None，代表会输入随机噪声
         images = gen(None)
+        # # [-1,1]-->[0,1]
         images = images * 0.5 + 0.5  # scale to [0, 1]
         return images
 

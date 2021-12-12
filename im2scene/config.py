@@ -45,18 +45,23 @@ def load_config(path, default_path=None):
 
 def update_recursive(dict1, dict2):
     ''' Update two config dictionaries recursively.
-
+        将dict2的内容更新到dict1
     Args:
         dict1 (dict): first dictionary to be updated
         dict2 (dict): second dictionary which entries should be used
 
     '''
     for k, v in dict2.items():
+        # 2中的key不在1中
         if k not in dict1:
+            # 在1中新建一个key并初始化value为一个dict
             dict1[k] = dict()
+        # 如果v是一个字典
         if isinstance(v, dict):
+            # 递归update
             update_recursive(dict1[k], v)
         else:
+            # 不是字典直接赋值
             dict1[k] = v
 
 
@@ -78,6 +83,9 @@ def get_model(cfg, device=None, len_dataset=0):
 
 
 def set_logger(cfg):
+    """
+        根据配置文件设置logger
+    """
     logfile = os.path.join(cfg['training']['out_dir'],
                            cfg['training']['logfile'])
     logging.basicConfig(
@@ -123,7 +131,9 @@ def get_renderer(model, cfg, device):
         cfg (dict): config dictionary
         device (device): pytorch device
     '''
+    # 获取方法名
     method = cfg['method']
+    # 获取指定渲染器
     renderer = method_dict[method].config.get_renderer(model, cfg, device)
     return renderer
 

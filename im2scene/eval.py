@@ -14,7 +14,8 @@ https://github.com/mseitzer/pytorch-fid/blob/master/pytorch_fid/fid_score.py
 
 def imread(filename):
     """
-    Loads an image file into a (height, width, 3) uint8 ndarray.
+        将图像读取为(height, width, 3)的np数组
+        Loads an image file into a (height, width, 3) uint8 ndarray.
     """
     return np.asarray(Image.open(filename), dtype=np.uint8)[..., :3]
 
@@ -56,18 +57,19 @@ def get_activations(files, model, batch_size=50, dims=2048,
         for i in tqdm(range(0, len(files), batch_size)):
             start = i
             end = i + batch_size
-
+            # 读取图片
             images = np.array([imread(str(f)).astype(np.float32)
                                for f in files[start:end]])
             # Reshape to (n_images, 3, height, width)
             images = images.transpose((0, 3, 1, 2))
+            # [0-255]-->[0,1]
             images /= 255
-
+            # 一批图像
             batch = torch.from_numpy(images).type(torch.FloatTensor)
-
+            # 如果使用cuda
             if cuda:
                 batch = batch.cuda()
-
+            # 使用模型进行预测
             pred = model(batch)[0]
 
             # If model output is not scalar, apply global spatial average pooling.
@@ -105,7 +107,9 @@ def get_activations(files, model, batch_size=50, dims=2048,
 
 
 def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
-    """Numpy implementation of the Frechet Distance.
+    """
+    弗朗明歇距离
+    Numpy implementation of the Frechet Distance.
     The Frechet distance between two multivariate Gaussians X_1 ~ N(mu_1, C_1)
     and X_2 ~ N(mu_2, C_2) is
             d^2 = ||mu_1 - mu_2||^2 + Tr(C_1 + C_2 - 2*sqrt(C_1*C_2)).
