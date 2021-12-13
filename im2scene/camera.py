@@ -175,6 +175,7 @@ def look_at(eye, at=np.array([0, 0, 0]), up=np.array([0, 0, 1]), eps=1e-5,
 
 
 def get_rotation_matrix(axis='z', value=0., batch_size=32):
+    # 方向余弦矩阵
     r = Rot.from_euler(axis, value * 2 * np.pi).as_dcm()
     r = torch.from_numpy(r).reshape(1, 3, 3).repeat(batch_size, 1, 1)
     return r

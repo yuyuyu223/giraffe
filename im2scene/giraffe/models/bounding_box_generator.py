@@ -54,12 +54,14 @@ class BoundingBoxGenerator(nn.Module):
         self.collision_padding = collision_padding
         self.fix_scale_ratio = fix_scale_ratio
         self.object_on_plane = object_on_plane
-
+        # 如果先验npz文件存在
         if prior_npz_file is not None:
             try:
+                # 尝试读取
                 prior = np.load(prior_npz_file)['coordinates']
                 # We multiply by ~0.23 as this is multiplier of the original clevr
                 # world and our world scale
+                # 原始clevr乘数
                 self.prior = torch.from_numpy(prior).float() * 0.2378777237835723
             except Exception as e: 
                 print("WARNING: Clevr prior location file could not be loaded!")
@@ -86,7 +88,13 @@ class BoundingBoxGenerator(nn.Module):
         return is_free
 
     def get_translation(self, batch_size=32, val=[[0.5, 0.5, 0.5]]):
+        """
+            根据切分，输出平移矩阵
+        """
         n_boxes = len(val)
+        """
+        |--------*-------------------|
+        """
         t = self.translation_min + \
             torch.tensor(val).reshape(1, n_boxes, 3) * self.translation_range
         t = t.repeat(batch_size, 1, 1)
@@ -95,8 +103,13 @@ class BoundingBoxGenerator(nn.Module):
         return t
 
     def get_rotation(self, batch_size=32, val=[0.]):
+        """
+            获取指定切分点处的旋转角度的方向余弦矩阵
+        """
         r_range = self.rotation_range
+        # 在指定切分点出获取value旋转角度
         values = [r_range[0] + v * (r_range[1] - r_range[0]) for v in val]
+        # 传入旋转角度返回方向余弦矩阵
         r = torch.cat([get_rotation_matrix(
             value=v, batch_size=batch_size).unsqueeze(1) for v in values],
             dim=1)

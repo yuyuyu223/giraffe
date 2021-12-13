@@ -39,7 +39,7 @@ class GIRAFFE(nn.Module):
                  discriminator=None, generator=None, generator_test=None,
                  **kwargs):
         super().__init__()
-
+        # 传入生成器和判别器
         if discriminator is not None:
             self.discriminator = discriminator.to(device)
         else:
@@ -55,15 +55,19 @@ class GIRAFFE(nn.Module):
             self.generator_test = None
 
     def forward(self, batch_size, **kwargs):
+        # gen是生成器
         gen = self.generator_test
         if gen is None:
             gen = self.generator
+        # 随机各种参数生成图像，指定batchsize
         return gen(batch_size=batch_size)
 
     def generate_test_images(self):
+        # gen是生成器
         gen = self.generator_test
         if gen is None:
             gen = self.generator
+        # 随机各种参数生成图像
         return gen()
 
     def to(self, device):
