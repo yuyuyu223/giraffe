@@ -90,6 +90,12 @@ class BoundingBoxGenerator(nn.Module):
     def get_translation(self, batch_size=32, val=[[0.5, 0.5, 0.5]]):
         """
             根据切分，输出平移矩阵
+            尺寸:
+           [[[0., 0., 0.]],
+            [[0., 0., 0.]],
+            ......
+            [[0., 0., 0.]],
+            [[0., 0., 0.]]]
         """
         n_boxes = len(val)
         """
@@ -105,6 +111,25 @@ class BoundingBoxGenerator(nn.Module):
     def get_rotation(self, batch_size=32, val=[0.]):
         """
             获取指定切分点处的旋转角度的方向余弦矩阵
+
+            尺寸:
+            [[[[1., 0., 0.],
+               [0., 1., 0.],
+               [0., 0., 1.]]],
+
+             [[[1., 0., 0.],
+               [0., 1., 0.],
+               [0., 0., 1.]]],
+
+               ......
+
+             [[[1., 0., 0.],
+               [0., 1., 0.],
+               [0., 0., 1.]]],
+
+             [[[1., 0., 0.],
+               [0., 1., 0.],
+               [0., 0., 1.]]]])
         """
         r_range = self.rotation_range
         # 在指定切分点出获取value旋转角度
@@ -117,6 +142,18 @@ class BoundingBoxGenerator(nn.Module):
         return r
 
     def get_scale(self, batch_size=32, val=[[0.5, 0.5, 0.5]]):
+        """
+            获取指定切分点处的缩放
+
+            尺寸:
+            [[[0.5000, 0.5000, 0.5000]],
+
+             [[0.5000, 0.5000, 0.5000]],
+             ......
+             [[0.5000, 0.5000, 0.5000]],
+
+             [[0.5000, 0.5000, 0.5000]]])
+        """
         n_boxes = len(val)
         if self.fix_scale_ratio:
             t = self.scale_min + \
@@ -129,23 +166,32 @@ class BoundingBoxGenerator(nn.Module):
         return t
 
     def get_random_offset(self, batch_size):
+        """
+            随机生成仿射变换
+        """
         n_boxes = self.n_boxes
         # Sample sizes
+        # 随机生成缩放
         if self.fix_scale_ratio:
+            # 随机生成分位数
             s_rand = torch.rand(batch_size, n_boxes, 1)
         else:
             s_rand = torch.rand(batch_size, n_boxes, 3)
         s = self.scale_min + s_rand * self.scale_range
 
         # Sample translations
+        # 随机生成一些平移变换
         if self.prior is not None:
             idx = np.random.randint(self.prior.shape[0], size=(batch_size))
             t = self.prior[idx]
         else:
             t = self.translation_min + \
                 torch.rand(batch_size, n_boxes, 3) * self.translation_range
+            # 如果要进行冲突检测
             if self.check_collison:
+                # 对缩放和平移进行冲突检测，避免缩放后平移导致飞出视口
                 is_free = self.check_for_collison(s, t)
+                # is_free全是true跳过，有一个是false就重新生成false的平移变换
                 while not torch.all(is_free):
                     t_new = self.translation_min + \
                         torch.rand(batch_size, n_boxes, 3) * \
