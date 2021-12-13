@@ -115,12 +115,13 @@ class CheckpointIO(object):
         Args:
             state_dict (dict): State dict of model
     '''
-
+        # 把state_dict的内容加载到各个model里
         for k, v in self.module_dict.items():
             if k in state_dict:
                 v.load_state_dict(state_dict[k])
             else:
                 print('Warning: Could not find %s in checkpoint!' % k)
+        # 返回冗余下来的键值对
         scalars = {k: v for k, v in state_dict.items()
                    if k not in self.module_dict}
         return scalars
@@ -132,5 +133,6 @@ def is_url(url):
     Args:
         url (string): URL
     '''
+    # 检查协议名称
     scheme = urllib.parse.urlparse(url).scheme
     return scheme in ('http', 'https')

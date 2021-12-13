@@ -56,19 +56,28 @@ def get_middle_pose(range_u, range_v, range_radius, batch_size=32,
 
 def get_camera_pose(range_u, range_v, range_r, val_u=0.5, val_v=0.5, val_r=0.5,
                     batch_size=32, invert=False):
+    
+    """
+        u0|-----------*--------------------|u0+ur
+    """
     u0, ur = range_u[0], range_u[1] - range_u[0]
     v0, vr = range_v[0], range_v[1] - range_v[0]
     r0, rr = range_r[0], range_r[1] - range_r[0]
     u = u0 + val_u * ur
     v = v0 + val_v * vr
     r = r0 + val_r * rr
-
+    # 获取指定的u,v对应的单位球体上的坐标
     loc = sample_on_sphere((u, u), (v, v), size=(batch_size))
+    # 坐标缩放到指定r的球体上
     radius = torch.ones(batch_size) * r
     loc = loc * radius.unsqueeze(-1)
+    # 相机去观察loc点（注意这只是LookAt矩阵的一部分）
     R = look_at(loc)
+    # 建立4x4单位阵
     RT = torch.eye(4).reshape(1, 4, 4).repeat(batch_size, 1, 1)
+    # LookAt矩阵的左上3x3是
     RT[:, :3, :3] = R
+    # LookAt矩阵的第4列是观察点的坐标
     RT[:, :3, -1] = loc
 
     if invert:
@@ -77,8 +86,13 @@ def get_camera_pose(range_u, range_v, range_r, val_u=0.5, val_v=0.5, val_r=0.5,
 
 
 def to_sphere(u, v):
+    """
+        用u,v控制经纬角来获取单位球体上的指定坐标
+    """
+    # 这里u，v和theta,phi都是正相关的，可以根据u,v的大小控制经纬角
     theta = 2 * np.pi * u
     phi = np.arccos(1 - 2 * v)
+    # 球体的参数方程
     cx = np.sin(phi) * np.cos(theta)
     cy = np.sin(phi) * np.sin(theta)
     cz = np.cos(phi)
