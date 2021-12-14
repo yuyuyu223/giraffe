@@ -71,6 +71,9 @@ class BoundingBoxGenerator(nn.Module):
             self.prior = None
 
     def check_for_collison(self, s, t):
+        """
+            检查缩放和平移是否冲突
+        """
         n_boxes = s.shape[1]
         if n_boxes == 1:
             is_free = torch.ones_like(s[..., 0]).bool().squeeze(1)
@@ -167,7 +170,7 @@ class BoundingBoxGenerator(nn.Module):
 
     def get_random_offset(self, batch_size):
         """
-            随机生成仿射变换
+            随机生成仿射变换s，t，R
         """
         n_boxes = self.n_boxes
         # Sample sizes
@@ -189,7 +192,7 @@ class BoundingBoxGenerator(nn.Module):
                 torch.rand(batch_size, n_boxes, 3) * self.translation_range
             # 如果要进行冲突检测
             if self.check_collison:
-                # 对缩放和平移进行冲突检测，避免缩放后平移导致飞出视口
+                # 对缩放和平移进行冲突检测，避免太过离谱？
                 is_free = self.check_for_collison(s, t)
                 # is_free全是true跳过，有一个是false就重新生成false的平移变换
                 while not torch.all(is_free):
@@ -200,9 +203,10 @@ class BoundingBoxGenerator(nn.Module):
                     is_free = self.check_for_collison(s, t)
             if self.object_on_plane:
                 t[..., -1] = self.z_level_plane
-
+        # 随机生成旋转变换函数
         def r_val(): return self.rotation_range[0] + np.random.rand() * (
             self.rotation_range[1] - self.rotation_range[0])
+        # 随机生成旋转变换
         R = [torch.from_numpy(
             Rot.from_euler('z', r_val() * 2 * np.pi).as_dcm())
             for i in range(batch_size * self.n_boxes)]
@@ -211,6 +215,7 @@ class BoundingBoxGenerator(nn.Module):
         return s, t, R
 
     def forward(self, batch_size=32):
+        # 随机生成仿射变换
         s, t, R = self.get_random_offset(batch_size)
         R = R.reshape(batch_size, self.n_boxes, 3, 3)
         return s, t, R
