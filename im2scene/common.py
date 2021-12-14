@@ -208,6 +208,7 @@ def origin_to_world(n_points, camera_mat, world_mat, scale_mat=None,
 def image_points_to_world(image_points, camera_mat, world_mat, scale_mat=None,
                           invert=False, negative_depth=True):
     ''' Transforms points on image plane to world coordinates.
+    将点转换到世界坐标下
 
     In contrast to transform_to_world, no depth value is needed as points on
     the image plane have a fixed depth of 1.
@@ -219,11 +220,14 @@ def image_points_to_world(image_points, camera_mat, world_mat, scale_mat=None,
         scale_mat (tensor): scale matrix
         invert (bool): whether to invert matrices (default: False)
     '''
+    # 第一维度是批大小，第二维度是点的个数，第三维度是图片维度
     batch_size, n_pts, dim = image_points.shape
+    # 2D图像一定是二维的
     assert(dim == 2)
     device = image_points.device
-    # 深度全是1
+    # 2D图上的像素深度全是1
     d_image = torch.ones(batch_size, n_pts, 1).to(device)
+    # 是否反转深度
     if negative_depth:
         d_image *= -1.
     return transform_to_world(image_points, d_image, camera_mat, world_mat,

@@ -11,6 +11,7 @@ class Decoder(nn.Module):
 
     Predicts volume density and color from 3D location, viewing
     direction, and latent code z.
+    输入z和d，输出sigma和c
 
     Args:
         hidden_size (int): hidden size of Decoder network
@@ -52,7 +53,7 @@ class Decoder(nn.Module):
         self.final_sigmoid_activation = final_sigmoid_activation
         self.n_blocks = n_blocks
         self.n_blocks_view = n_blocks_view
-
+        # 
         assert(positional_encoding in ('normal', 'gauss'))
         self.positional_encoding = positional_encoding
         if positional_encoding == 'gauss':
@@ -71,6 +72,7 @@ class Decoder(nn.Module):
             dim_embed_view = 3 * self.n_freq_posenc_views * 2
 
         # Density Prediction Layers
+        # 体积密度预测网络
         self.fc_in = nn.Linear(dim_embed, hidden_size)
         if z_dim > 0:
             self.fc_z = nn.Linear(z_dim, hidden_size)
@@ -98,19 +100,26 @@ class Decoder(nn.Module):
                  for i in range(n_blocks_view - 1)])
 
     def transform_points(self, p, views=False):
+        """
+            将位置转换为位置编码
+        """
         # Positional encoding
         # normalize p between [-1, 1]
+        # p标准化
         p = p / self.downscale_p_by
 
         # we consider points up to [-1, 1]
         # so no scaling required here
+        # 采用高斯位置编码？
         if self.positional_encoding == 'gauss':
             B = self.B_view if views else self.B_pos
             p_transformed = (B @ (pi * p.permute(0, 2, 1))).permute(0, 2, 1)
             p_transformed = torch.cat(
                 [torch.sin(p_transformed), torch.cos(p_transformed)], dim=-1)
         else:
+            # 频率倍频程
             L = self.n_freq_posenc_views if views else self.n_freq_posenc
+            # sin(2^0*t*pi),cos(2^0*t*pi),sin(2^1*t*pi),cos(2^2*t*pi),...,sin(2^L*t*pi),cos(2^L*t*pi)
             p_transformed = torch.cat([torch.cat(
                 [torch.sin((2 ** i) * pi * p),
                  torch.cos((2 ** i) * pi * p)],
@@ -120,12 +129,16 @@ class Decoder(nn.Module):
     def forward(self, p_in, ray_d, z_shape=None, z_app=None, **kwargs):
         a = F.relu
         if self.z_dim > 0:
+            # 获取batchsize
             batch_size = p_in.shape[0]
+            # 如果不指定z_shape和z_app就随机生成
             if z_shape is None:
                 z_shape = torch.randn(batch_size, self.z_dim).to(p_in.device)
             if z_app is None:
                 z_app = torch.randn(batch_size, self.z_dim).to(p_in.device)
+        # 获得位置编码
         p = self.transform_points(p_in)
+        # 位置编码输入到体积密度预测网络
         net = self.fc_in(p)
         if z_shape is not None:
             net = net + self.fc_z(z_shape).unsqueeze(1)
