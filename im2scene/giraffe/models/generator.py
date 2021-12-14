@@ -60,22 +60,24 @@ class Generator(nn.Module):
         self.z_dim = z_dim
         self.z_dim_bg = z_dim_bg
         self.use_max_composition = use_max_composition
-
+        # projection矩阵
         self.camera_matrix = get_camera_mat(fov=fov).to(device)
-
+        # decoder解码器： z,x --> sigma,f
         if decoder is not None:
             self.decoder = decoder.to(device)
         else:
             self.decoder = None
-
+        # 背景生成器
         if background_generator is not None:
             self.background_generator = background_generator.to(device)
         else:
             self.background_generator = None
+        # bounding_box生成器
         if bounding_box_generator is not None:
             self.bounding_box_generator = bounding_box_generator.to(device)
         else:
             self.bounding_box_generator = bounding_box_generator
+        # 神经渲染器
         if neural_renderer is not None:
             self.neural_renderer = neural_renderer.to(device)
         else:
@@ -86,15 +88,16 @@ class Generator(nn.Module):
                 return_alpha_map=False,
                 not_render_background=False,
                 only_render_background=False):
+        # 如果潜在编码为空则生成
         if latent_codes is None:
             latent_codes = self.get_latent_codes(batch_size)
-
+        # 如果相机视角相关的矩阵为空，则随机生成
         if camera_matrices is None:
             camera_matrices = self.get_random_camera(batch_size)
-
+        # 如果仿射变换是空，则随机生成
         if transformations is None:
             transformations = self.get_random_transformations(batch_size)
-
+        # 如果背景旋转是空，则随机生成
         if bg_rotation is None:
             bg_rotation = self.get_random_bg_rotation(batch_size)
 
@@ -123,6 +126,7 @@ class Generator(nn.Module):
         return n_boxes
 
     def get_latent_codes(self, batch_size=32, tmp=1.):
+        # 噪声的维度
         z_dim, z_dim_bg = self.z_dim, self.z_dim_bg
 
         n_boxes = self.get_n_boxes()
@@ -152,6 +156,9 @@ class Generator(nn.Module):
         return vis_dict
 
     def get_random_camera(self, batch_size=32, to_device=True):
+        """
+            获取随机的projection矩阵和lookAt^-1矩阵
+        """
         camera_mat = self.camera_matrix.repeat(batch_size, 1, 1)
         world_mat = get_random_pose(
             self.range_u, self.range_v, self.range_radius, batch_size)
@@ -170,9 +177,15 @@ class Generator(nn.Module):
         return camera_mat, world_mat
 
     def get_random_bg_rotation(self, batch_size, to_device=True):
+        """
+            随机生成背景旋转
+        """
+        # 背景旋转范围不是0-0（有旋转）
         if self.backround_rotation_range != [0., 0.]:
             bg_r = self.backround_rotation_range
+            # 随机生成分位点来生成随机的旋转角度
             r_random = bg_r[0] + np.random.rand() * (bg_r[1] - bg_r[0])
+            # 生成旋转角度对应的旋转矩阵
             R_bg = [
                 torch.from_numpy(Rot.from_euler(
                     'z', r_random * 2 * np.pi).as_dcm()
@@ -180,6 +193,7 @@ class Generator(nn.Module):
             R_bg = torch.stack(R_bg, dim=0).reshape(
                 batch_size, 3, 3).float()
         else:
+            # 不旋转就是单位阵
             R_bg = torch.eye(3).unsqueeze(0).repeat(batch_size, 1, 1).float()
         if to_device:
             R_bg = R_bg.to(self.device)
@@ -199,6 +213,9 @@ class Generator(nn.Module):
         return r
 
     def get_random_transformations(self, batch_size=32, to_device=True):
+        """
+            随机生成仿射变换
+        """
         device = self.device
         s, t, R = self.bounding_box_generator(batch_size)
         if to_device:
@@ -258,16 +275,23 @@ class Generator(nn.Module):
         return R
 
     def add_noise_to_interval(self, di):
+        # 计算每个相邻光线同深度采样位置深度平均值
         di_mid = .5 * (di[..., 1:] + di[..., :-1])
         di_high = torch.cat([di_mid, di[..., -1:]], dim=-1)
         di_low = torch.cat([di[..., :1], di_mid], dim=-1)
+        # 生成随机噪声
         noise = torch.rand_like(di_low)
+        # 生成随机的深度
         ti = di_low + (di_high - di_low) * noise
         return ti
 
     def transform_points_to_box(self, p, transformations, box_idx=0,
                                 scale_factor=1.):
+        """
+            TODO:将点的世界坐标转换为box空间中坐标
+        """
         bb_s, bb_t, bb_R = transformations
+        # 先平移，再旋转，再缩放
         p_box = (bb_R[:, box_idx] @ (p - bb_t[:, box_idx].unsqueeze(1)
                                      ).permute(0, 2, 1)).permute(
             0, 2, 1) / bb_s[:, box_idx].unsqueeze(1) * scale_factor
@@ -275,13 +299,16 @@ class Generator(nn.Module):
 
     def get_evaluation_points_bg(self, pixels_world, camera_world, di,
                                  rotation_matrix):
+        # 获取batchsize
         batch_size = pixels_world.shape[0]
+        # 一条光线上采样点的个数
         n_steps = di.shape[-1]
-
+        # 将相机世界坐标和像素的世界坐标旋转一下
         camera_world = (rotation_matrix @
                         camera_world.permute(0, 2, 1)).permute(0, 2, 1)
         pixels_world = (rotation_matrix @
                         pixels_world.permute(0, 2, 1)).permute(0, 2, 1)
+        # 光线的世界坐标方向
         ray_world = pixels_world - camera_world
 
         p = camera_world.unsqueeze(-2).contiguous() + \
@@ -295,20 +322,27 @@ class Generator(nn.Module):
 
     def get_evaluation_points(self, pixels_world, camera_world, di,
                               transformations, i):
+        """
+            对第i个模型来说，生成采样点坐标（在box中）
+        """
+        # 获取batchsize
         batch_size = pixels_world.shape[0]
+        # 一条光线上采样点的个数
         n_steps = di.shape[-1]
 
         pixels_world_i = self.transform_points_to_box(
             pixels_world, transformations, i)
         camera_world_i = self.transform_points_to_box(
             camera_world, transformations, i)
+        # 光线的方向
         ray_i = pixels_world_i - camera_world_i
-
+        # 深度*光线方向+相机位置=采样点坐标
         p_i = camera_world_i.unsqueeze(-2).contiguous() + \
             di.unsqueeze(-1).contiguous() * ray_i.unsqueeze(-2).contiguous()
         ray_i = ray_i.unsqueeze(-2).repeat(1, 1, n_steps, 1)
+        # 检测维数相同
         assert(p_i.shape == ray_i.shape)
-
+        #reshape
         p_i = p_i.reshape(batch_size, -1, 3)
         ray_i = ray_i.reshape(batch_size, -1, 3)
 
@@ -387,13 +421,21 @@ class Generator(nn.Module):
                             it=0, return_alpha_map=False,
                             not_render_background=False,
                             only_render_background=False):
+        # 分辨率
         res = self.resolution_vol
+        # gpu/cpu
         device = self.device
+        # 
         n_steps = self.n_ray_samples
+        # 像素点的个数
         n_points = res * res
+        # 深度范围（远近平面？）
         depth_range = self.depth_range
+        # 获取batchsize
         batch_size = latent_codes[0].shape[0]
+        # 分离四种噪声
         z_shape_obj, z_app_obj, z_shape_bg, z_app_bg = latent_codes
+        # 两个变量不能冲突
         assert(not (not_render_background and only_render_background))
 
         # Arange Pixels
@@ -401,40 +443,53 @@ class Generator(nn.Module):
                                invert_y_axis=False)[1].to(device)
         pixels[..., -1] *= -1.
         # Project to 3D world
+        # 将点转换到世界坐标
         pixels_world = image_points_to_world(
             pixels, camera_mat=camera_matrices[0],
             world_mat=camera_matrices[1])
+        # 将相机位置转换到世界坐标
         camera_world = origin_to_world(
             n_points, camera_mat=camera_matrices[0],
             world_mat=camera_matrices[1])
+        # 光线向量=像素世界坐标-相机世界坐标
         ray_vector = pixels_world - camera_world
         # batch_size x n_points x n_steps
+        # 在光线上生成等间距的采样点的深度
         di = depth_range[0] + \
             torch.linspace(0., 1., steps=n_steps).reshape(1, 1, -1) * (
                 depth_range[1] - depth_range[0])
+        # 所有光线的等间距的采样点的深度
         di = di.repeat(batch_size, n_points, 1).to(device)
+        # 如果是训练模式，采样深度添加一些噪声
         if mode == 'training':
             di = self.add_noise_to_interval(di)
-
+        #z_shape_obj.shape[1],有几个目标物体（N-1个目标）
         n_boxes = latent_codes[0].shape[1]
+        # f,sigma
         feat, sigma = [], []
+        # 如果不渲染背景就是N-1个模型，否则是N个模型
         n_iter = n_boxes if not_render_background else n_boxes + 1
+        # 如果只渲染背景，共一个模型，0个目标模型，1个背景模型
         if only_render_background:
             n_iter = 1
             n_boxes = 0
+        # 对于每个模型
         for i in range(n_iter):
+            # 如果是目标模型
             if i < n_boxes:  # Object
+                # 根据世界坐标下的点和相机位置，生成第i个模型的对应的在box中的光线方向和采样点坐标
                 p_i, r_i = self.get_evaluation_points(
                     pixels_world, camera_world, di, transformations, i)
                 z_shape_i, z_app_i = z_shape_obj[:, i], z_app_obj[:, i]
-
+                # 根据采样点位置和光线方向输出第i个模型对应的所有光线上的f_i,sigma_i
                 feat_i, sigma_i = self.decoder(p_i, r_i, z_shape_i, z_app_i)
-
+                # 效仿NeRF，在训练的时候加噪声
                 if mode == 'training':
                     # As done in NeRF, add noise during training
                     sigma_i += torch.randn_like(sigma_i)
 
                 # Mask out values outside
+                # 过滤删掉那些出边界太离谱的采样点的sigma
                 padd = 0.1
                 mask_box = torch.all(
                     p_i <= 1. + padd, dim=-1) & torch.all(
@@ -444,21 +499,25 @@ class Generator(nn.Module):
                 # Reshape
                 sigma_i = sigma_i.reshape(batch_size, n_points, n_steps)
                 feat_i = feat_i.reshape(batch_size, n_points, n_steps, -1)
+            # 对于背景模型
             else:  # Background
+                # 获取背景的采样点
                 p_bg, r_bg = self.get_evaluation_points_bg(
                     pixels_world, camera_world, di, bg_rotation)
-
+                # 计算背景模型的f和sigma
                 feat_i, sigma_i = self.background_generator(
                     p_bg, r_bg, z_shape_bg, z_app_bg)
+                
                 sigma_i = sigma_i.reshape(batch_size, n_points, n_steps)
                 feat_i = feat_i.reshape(batch_size, n_points, n_steps, -1)
-
+                # 效仿NeRF，在训练的时候加噪声
                 if mode == 'training':
                     # As done in NeRF, add noise during training
                     sigma_i += torch.randn_like(sigma_i)
-
+            # 将第i个模型的f和sigma添加到列表
             feat.append(feat_i)
             sigma.append(sigma_i)
+        # sigma过一遍relu，过滤掉负值
         sigma = F.relu(torch.stack(sigma, dim=0))
         feat = torch.stack(feat, dim=0)
 
@@ -477,6 +536,7 @@ class Generator(nn.Module):
             sigma = sigma.reshape(*sigma_shape)
 
         # Composite
+        # sigma简单加和，f加权求和
         sigma_sum, feat_weighted = self.composite_function(sigma, feat)
 
         # Get Volume Weights
