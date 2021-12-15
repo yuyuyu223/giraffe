@@ -95,6 +95,9 @@ class ResnetBlock(nn.Module):
 
 
 class Blur(nn.Module):
+    """
+        一个卷积层罢了
+    """
     def __init__(self):
         super().__init__()
         f = torch.Tensor([1, 2, 1])
@@ -102,5 +105,7 @@ class Blur(nn.Module):
 
     def forward(self, x):
         f = self.f
+        # [[1,2,1],[2,4,2],[1,2,1]]
         f = f[None, None, :] * f[None, :, None]
+        # 一个二维的卷积
         return filter2D(x, f, normalized=True)
