@@ -5,7 +5,8 @@ from scipy.spatial.transform import Rotation as Rot
 
 def get_camera_mat(fov=49.13, invert=True):
     """
-        求projection矩阵，透视投影
+        求projection矩阵，透视投影，默认返回projection^-1
+        这里的projection只为了缩放近平面
     """
     # fov = 2 * arctan( sensor / (2 * focal))
     # focal = (sensor / 2)  * 1 / (tan(0.5 * fov))

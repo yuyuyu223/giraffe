@@ -1,15 +1,11 @@
 import torch
 
-val=[[0.5, 0.5, 0.5]]
-n_boxes = len(val)
-scale_range_min=[0.5, 0.5, 0.5]
-scale_range_max=[0.6, 0.6, 0.6]
-scale_range = (torch.tensor(scale_range_max) -
-                            torch.tensor(scale_range_min)).reshape(1, 1, 3)
-scale_min = torch.tensor(scale_range_min).reshape(1, 1, 3)
-# print(scale_min)
-s_rand = torch.rand(4, n_boxes, 1)
-print(s_rand)
-print(scale_range)
-s = s_rand * scale_range
-print(s)
+pixel_locations = torch.meshgrid(torch.arange(0, 512), torch.arange(0, 512))
+    # 在最里层新建维度上进行拼接，然后reshape再repeat
+pixel_locations = torch.stack(
+        [pixel_locations[0], pixel_locations[1]],
+        dim=-1).long().view(1, -1, 2).repeat(4, 1, 1)
+pixel_locations[..., -1] *= -1
+pixel_locations=pixel_locations.permute(0, 2, 1)
+pixel_locations=torch.cat([pixel_locations, torch.ones_like(pixel_locations)], dim=1)
+print(pixel_locations)

@@ -60,7 +60,7 @@ class Generator(nn.Module):
         self.z_dim = z_dim
         self.z_dim_bg = z_dim_bg
         self.use_max_composition = use_max_composition
-        # projection矩阵
+        # projection^-1矩阵
         self.camera_matrix = get_camera_mat(fov=fov).to(device)
         # decoder解码器： z,x --> sigma,f
         if decoder is not None:
@@ -126,12 +126,16 @@ class Generator(nn.Module):
         return n_boxes
 
     def get_latent_codes(self, batch_size=32, tmp=1.):
+        """
+            生成四种随机噪声
+        """
         # 噪声的维度
         z_dim, z_dim_bg = self.z_dim, self.z_dim_bg
-
+        # 获取box数目
         n_boxes = self.get_n_boxes()
-
+        # 生成随机噪声
         def sample_z(x): return self.sample_z(x, tmp=tmp)
+        # 随机生成形状、外观的目标和背景的噪声
         z_shape_obj = sample_z((batch_size, n_boxes, z_dim))
         z_app_obj = sample_z((batch_size, n_boxes, z_dim))
         z_shape_bg = sample_z((batch_size, z_dim_bg))
@@ -140,12 +144,19 @@ class Generator(nn.Module):
         return z_shape_obj, z_app_obj, z_shape_bg, z_app_bg
 
     def sample_z(self, size, to_device=True, tmp=1.):
+        """
+            生成随机噪声的函数
+        """
+        # 生成随机噪声
         z = torch.randn(*size) * tmp
         if to_device:
             z = z.to(self.device)
         return z
 
     def get_vis_dict(self, batch_size=32):
+        """
+            随机生成各种可视化数据
+        """
         vis_dict = {
             'batch_size': batch_size,
             'latent_codes': self.get_latent_codes(batch_size),
@@ -169,6 +180,7 @@ class Generator(nn.Module):
     def get_camera(self, val_u=0.5, val_v=0.5, val_r=0.5, batch_size=32,
                    to_device=True):
         camera_mat = self.camera_matrix.repeat(batch_size, 1, 1)
+        # 获取world_matrix
         world_mat = get_camera_pose(
             self.range_u, self.range_v, self.range_radius, val_u, val_v,
             val_r, batch_size=batch_size)
@@ -200,6 +212,9 @@ class Generator(nn.Module):
         return R_bg
 
     def get_bg_rotation(self, val, batch_size=32, to_device=True):
+        """
+            获取背景旋转矩阵
+        """
         if self.backround_rotation_range != [0., 0.]:
             bg_r = self.backround_rotation_range
             r_val = bg_r[0] + val * (bg_r[1] - bg_r[0])
@@ -225,6 +240,9 @@ class Generator(nn.Module):
     def get_transformations(self, val_s=[[0.5, 0.5, 0.5]],
                             val_t=[[0.5, 0.5, 0.5]], val_r=[0.5],
                             batch_size=32, to_device=True):
+        """
+            获取指定参数的仿射变换
+        """
         device = self.device
         s = self.bounding_box_generator.get_scale(
             batch_size=batch_size, val=val_s)
@@ -240,6 +258,9 @@ class Generator(nn.Module):
     def get_transformations_in_range(self, range_s=[0., 1.], range_t=[0., 1.],
                                      range_r=[0., 1.], n_boxes=1,
                                      batch_size=32, to_device=True):
+        """
+            随机生成在指定参数范围的仿射变换
+        """
         s, t, R = [], [], []
 
         def rand_s(): return range_s[0] + \
@@ -266,6 +287,9 @@ class Generator(nn.Module):
         return s, t, R
 
     def get_rotation(self, val_r, batch_size=32, to_device=True):
+        """
+            获取旋转矩阵
+        """
         device = self.device
         R = self.bounding_box_generator.get_rotation(
             batch_size=batch_size, val=val_r)
@@ -275,6 +299,9 @@ class Generator(nn.Module):
         return R
 
     def add_noise_to_interval(self, di):
+        """
+            为di添加噪声
+        """
         # 计算每个相邻光线同深度采样位置深度平均值
         di_mid = .5 * (di[..., 1:] + di[..., :-1])
         di_high = torch.cat([di_mid, di[..., -1:]], dim=-1)
@@ -288,7 +315,7 @@ class Generator(nn.Module):
     def transform_points_to_box(self, p, transformations, box_idx=0,
                                 scale_factor=1.):
         """
-            TODO:将点的世界坐标转换为box空间中坐标
+            将点的世界坐标转换为box空间中坐标，仿射变换的逆变换
         """
         bb_s, bb_t, bb_R = transformations
         # 先平移，再旋转，再缩放
@@ -329,7 +356,7 @@ class Generator(nn.Module):
         batch_size = pixels_world.shape[0]
         # 一条光线上采样点的个数
         n_steps = di.shape[-1]
-
+        # 获取在box中的点和相机的位置
         pixels_world_i = self.transform_points_to_box(
             pixels_world, transformations, i)
         camera_world_i = self.transform_points_to_box(
@@ -351,6 +378,7 @@ class Generator(nn.Module):
     def composite_function(self, sigma, feat):
         n_boxes = sigma.shape[0]
         if n_boxes > 1:
+            # 用最大sigma分量和f分量
             if self.use_max_composition:
                 bs, rs, ns = sigma.shape[1:]
                 sigma_sum, ind = torch.max(sigma, dim=0)
@@ -359,21 +387,31 @@ class Generator(nn.Module):
                                          1, -1, 1), torch.arange(ns).reshape(
                                              1, 1, -1)]
             else:
+                # sigma求和
                 denom_sigma = torch.sum(sigma, dim=0, keepdim=True)
+                # 避免sigma为0
                 denom_sigma[denom_sigma == 0] = 1e-4
+                # 计算sigma的权重
                 w_sigma = sigma / denom_sigma
+                # sigma求和（不保留维度）
                 sigma_sum = torch.sum(sigma, dim=0)
+                # f权重加和
                 feat_weighted = (feat * w_sigma.unsqueeze(-1)).sum(0)
         else:
+            # 如果只有一个目标，不用求和
             sigma_sum = sigma.squeeze(0)
             feat_weighted = feat.squeeze(0)
         return sigma_sum, feat_weighted
 
     def calc_volume_weights(self, z_vals, ray_vector, sigma, last_dist=1e10):
+        # 错位相减得到样本间距离
         dists = z_vals[..., 1:] - z_vals[..., :-1]
+        # 补全错位相减的结果
         dists = torch.cat([dists, torch.ones_like(
             z_vals[..., :1]) * last_dist], dim=-1)
+        # 乘光线长度以得到真实距离
         dists = dists * torch.norm(ray_vector, dim=-1, keepdim=True)
+        # α=1-e^(-sigma*derta)
         alpha = 1.-torch.exp(-F.relu(sigma)*dists)
         weights = alpha * \
             torch.cumprod(torch.cat([
@@ -443,7 +481,7 @@ class Generator(nn.Module):
                                invert_y_axis=False)[1].to(device)
         pixels[..., -1] *= -1.
         # Project to 3D world
-        # 将点转换到世界坐标
+        # 将点转换到3D世界坐标
         pixels_world = image_points_to_world(
             pixels, camera_mat=camera_matrices[0],
             world_mat=camera_matrices[1])

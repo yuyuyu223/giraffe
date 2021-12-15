@@ -126,6 +126,7 @@ def transform_to_world(pixels, depth, camera_mat, world_mat, scale_mat=None,
     # Transform pixels to world space
     # openGL中：相机坐标左乘view矩阵的逆，左乘model矩阵(包括缩放，平移，旋转)的逆
     # 这里与scale_mat @ world_mat @ camera_mat @ pixels对应
+    # p_world=model^-1*view^-1*projection^-1*pixels
     p_world = scale_mat @ world_mat @ camera_mat @ pixels
 
     # Transform p_world back to 3D coordinates
@@ -180,7 +181,7 @@ def origin_to_world(n_points, camera_mat, world_mat, scale_mat=None,
     batch_size = camera_mat.shape[0]
     device = camera_mat.device
     # Create origin in homogen coordinates
-    # 建立其次坐标，第四分量填1
+    # 建立其次坐标，第四分量填1,相机默认在原点位置
     p = torch.zeros(batch_size, 4, n_points).to(device)
     p[:, -1] = 1.
 
