@@ -6,6 +6,7 @@ import numpy as np
 
 class BaseTrainer(object):
     ''' Base trainer class.
+        trainer的基类
     '''
 
     def evaluate(self, *args, **kwargs):
@@ -39,6 +40,9 @@ class BaseTrainer(object):
 
 
 def toggle_grad(model, requires_grad):
+    """
+        自动微分的开关
+    """
     for p in model.parameters():
         p.requires_grad_(requires_grad)
 
@@ -72,6 +76,9 @@ def update_average(model_tgt, model_src, beta):
 
 
 def compute_bce(d_out, target):
+    """
+        计算bce_loss
+    """
     targets = d_out.new_full(size=d_out.size(), fill_value=target)
     loss = F.binary_cross_entropy_with_logits(d_out, targets)
     return loss
