@@ -195,6 +195,8 @@ t0b = time.time()
 
 print("开始训练......")
 
+dist.barrier()
+
 while (True):
     epoch_it += 1
     # TODO: DDP：设置sampler的epoch，
@@ -253,6 +255,7 @@ while (True):
                 checkpoint_io.backup_model_best('model_best.pt')
                 checkpoint_io.save('model_best.pt', epoch_it=epoch_it, it=it,
                                    loss_val_best=metric_val_best)
+            
 
         # Exit if necessary
         if exit_after > 0 and (time.time() - t0) >= exit_after:
@@ -261,3 +264,5 @@ while (True):
                 checkpoint_io.save('model.pt', epoch_it=epoch_it, it=it,
                                 loss_val_best=metric_val_best)
             exit(3)
+        
+        dist.barrier()
