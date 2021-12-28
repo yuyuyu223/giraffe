@@ -35,8 +35,7 @@ args = parser.parse_args()
 cfg = config.load_config(args.config, 'configs/default.yaml')
 # 可以使用cuda的条件是torch cuda环境正确且命令行no_cuda未开启
 is_cuda = (torch.cuda.is_available() and not args.no_cuda)
-# 如果cuda可以使用，device为cuda，否则是cpu
-device = torch.device("cuda" if is_cuda else "cpu")
+
 
 
 """
@@ -51,6 +50,13 @@ local_rank = dist.get_rank()
 
 # DDP：DDP backend初始化
 torch.cuda.set_device(local_rank)
+
+is_master = True if local_rank == 0 else False
+
+# 如果cuda可以使用，device为cuda，否则是cpu
+device = torch.device("cuda" if is_cuda else "cpu",local_rank)
+
+# torch.cuda.set_per_process_memory_fraction(1.0, device)
 
 """
     配置文件读取
@@ -100,13 +106,11 @@ train_loader = torch.utils.data.DataLoader(
 )
 # 根据配置文件获取模型
 # TODO:DDP
-model = None
-if local_rank is None or local_rank == -1:
-    model = config.get_model(cfg, device=device, len_dataset=len(train_dataset))
-else:
-    model = config.get_model(cfg, device=local_rank, len_dataset=len(train_dataset))
-    model = DDP(model, device_ids=[local_rank], output_device=local_rank)
-    model = model.module
+model = config.get_model(cfg, device=device, len_dataset=len(train_dataset))
+
+# DDP将主节点的param和buffer分发到各进程，让他们保持参数一致
+model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+model = model.module
 
 # Initialize training
 # RMSProp优化算法或者是Adam优化算法
@@ -130,21 +134,24 @@ if hasattr(model, "discriminator") and model.discriminator is not None:
     optimizer_d = op(parameters_d, lr=lr_d)
 else:
     optimizer_d = None
+
 # 根据配置文件获取指定模型的训练器
-trainer = config.get_trainer(model, optimizer, optimizer_d, cfg, device=device)
+trainer = config.get_trainer(model, optimizer, optimizer_d, cfg, device=device, 
+                            use_DDP=False, device_ids=[local_rank], output_device=local_rank)
+
 # model checkpoint读取对象
-checkpoint_io = CheckpointIO(out_dir, model=model, optimizer=optimizer,
+checkpoint_io = CheckpointIO(out_dir, local_rank, model=model, optimizer=optimizer,
                              optimizer_d=optimizer_d)
+
 
 try:
     # 读取checkpoint
-    load_dict = checkpoint_io.load('model.pt')
+    load_dict = checkpoint_io.load('model.pt', device)
     print("Loaded model checkpoint.")
 # 找不到pt文件
 except FileExistsError:
     load_dict = dict()
     print("No model checkpoint found.")
-
 
 # 从checkpoint读取一些参数
 epoch_it = load_dict.get('epoch_it', -1)
@@ -156,7 +163,8 @@ if metric_val_best == np.inf or metric_val_best == -np.inf:
     metric_val_best = -model_selection_sign * np.inf
 
 print('Current best validation metric (%s): %.8f'
-      % (model_selection_metric, metric_val_best))
+        % (model_selection_metric, metric_val_best))
+
 # pytorch的logger，将event写入文件
 logger = SummaryWriter(os.path.join(out_dir, 'logs'))
 # Shorthands
@@ -169,12 +177,9 @@ validate_every = cfg['training']['validate_every']
 # 可视化频率
 visualize_every = cfg['training']['visualize_every']
 
-# Print model
+# 打印参数个数
 # 统计参数个数
 nparameters = sum(p.numel() for p in model.parameters())
-# 打印模型
-logger_py.info(model)
-# 打印参数个数
 logger_py.info('Total number of parameters: %d' % nparameters)
 # 统计打印判别器参数个数
 if hasattr(model, "discriminator") and model.discriminator is not None:
@@ -188,6 +193,8 @@ if hasattr(model, "generator") and model.generator is not None:
 
 t0b = time.time()
 
+print("开始训练......")
+
 while (True):
     epoch_it += 1
     # TODO: DDP：设置sampler的epoch，
@@ -196,7 +203,6 @@ while (True):
     train_loader.sampler.set_epoch(epoch_it)
 
     for batch in train_loader:
-
         it += 1
         loss = trainer.train_step(batch, it)
         for (k, v) in loss.items():
@@ -204,34 +210,34 @@ while (True):
         # Print output
         if print_every > 0 and (it % print_every) == 0:
             info_txt = '[Epoch %02d] it=%03d, time=%.3f ,pid=%d'% (
-                epoch_it, it, time.time() - t0b,dist.get_rank())
+                epoch_it, it, time.time() - t0b,local_rank)
             for (k, v) in loss.items():
                 info_txt += ', %s: %.4f' % (k, v)
             logger_py.info(info_txt)
             t0b = time.time()
 
         # # Visualize output
-        if visualize_every > 0 and (it % visualize_every) == 0:
+        if visualize_every > 0 and (it % visualize_every) == 0 and is_master:
             logger_py.info('Visualizing')
             image_grid = trainer.visualize(it=it)
             if image_grid is not None:
                 logger.add_image('images', image_grid, it)
 
         # Save checkpoint
-        if (checkpoint_every > 0 and (it % checkpoint_every) == 0) and dist.get_rank() == 0:
+        if (checkpoint_every > 0 and (it % checkpoint_every) == 0) and is_master:
             logger_py.info('Saving checkpoint')
             print('Saving checkpoint')
             checkpoint_io.save('model.pt', epoch_it=epoch_it, it=it,
                                loss_val_best=metric_val_best)
 
         # Backup if necessary
-        if (backup_every > 0 and (it % backup_every) == 0) and dist.get_rank() == 0:
+        if (backup_every > 0 and (it % backup_every) == 0) and is_master:
             logger_py.info('Backup checkpoint')
             checkpoint_io.save('model_%d.pt' % it, epoch_it=epoch_it, it=it,
                                loss_val_best=metric_val_best)
 
         # Run validation
-        if validate_every > 0 and (it % validate_every) == 0 and (it > 0):
+        if validate_every > 0 and (it % validate_every) == 0 and (it > 0) and is_master:
             print("Performing evaluation step.")
             eval_dict = trainer.evaluate()
             metric_val = eval_dict[model_selection_metric]
@@ -241,7 +247,7 @@ while (True):
             for k, v in eval_dict.items():
                 logger.add_scalar('val/%s' % k, v, it)
 
-            if model_selection_sign * (metric_val - metric_val_best) > 0 and dist.get_rank() == 0:
+            if model_selection_sign * (metric_val - metric_val_best) > 0:
                 metric_val_best = metric_val
                 logger_py.info('New best model (loss %.4f)' % metric_val_best)
                 checkpoint_io.backup_model_best('model_best.pt')
@@ -251,7 +257,7 @@ while (True):
         # Exit if necessary
         if exit_after > 0 and (time.time() - t0) >= exit_after:
             logger_py.info('Time limit reached. Exiting.')
-            if dist.get_rank() == 0:
+            if is_master:
                 checkpoint_io.save('model.pt', epoch_it=epoch_it, it=it,
                                 loss_val_best=metric_val_best)
             exit(3)

@@ -72,7 +72,7 @@ def get_model(cfg, device=None, len_dataset=0, **kwargs):
     return model
 
 
-def get_trainer(model, optimizer, optimizer_d, cfg, device, **kwargs):
+def get_trainer(model, optimizer, optimizer_d, cfg, device, use_DDP, device_ids, output_device, **kwargs):
     ''' Returns the trainer object.
 
     Args:
@@ -98,6 +98,7 @@ def get_trainer(model, optimizer, optimizer_d, cfg, device, **kwargs):
         overwrite_visualization=overwrite_visualization, multi_gpu=multi_gpu,
         fid_dict=fid_dict,
         n_eval_iterations=n_eval_iterations,
+        use_DDP=use_DDP, device_ids=device_ids, output_device=output_device
     )
 
     return trainer

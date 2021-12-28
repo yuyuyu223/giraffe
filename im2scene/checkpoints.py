@@ -1,4 +1,4 @@
-import os
+import os,gc
 import urllib
 import torch
 from torch.utils import model_zoo
@@ -17,7 +17,7 @@ class CheckpointIO(object):
 
     def __init__(self, checkpoint_dir='./chkpts', local_rank=-1, **kwargs):
         self.module_dict = kwargs
-        self.local_rank=-1
+        self.local_rank=local_rank
         self.checkpoint_dir = checkpoint_dir
         # checkpoint_dir不存在去创建
         if not os.path.exists(checkpoint_dir):
@@ -63,7 +63,7 @@ class CheckpointIO(object):
             # 拷贝
             shutil.copy(filename, filename_backup)
 
-    def load(self, filename):
+    def load(self, filename, device):
         '''Loads a module dictionary from local file or url.
 
         Args:
@@ -71,12 +71,12 @@ class CheckpointIO(object):
         '''
         # 如果文件路径是url
         if is_url(filename):
-            return self.load_url(filename)
+            return self.load_url(filename, device)
         # 如果文件路径是本地文件
         else:
-            return self.load_file(filename)
+            return self.load_file(filename, device)
 
-    def load_file(self, filename):
+    def load_file(self, filename, device):
         '''Loads a module dictionary from file.
 
         Args:
@@ -88,15 +88,17 @@ class CheckpointIO(object):
         # 如果文件存在
         if os.path.exists(filename):
             print(filename)
-            print('=> Loading checkpoint from local file...')
+            print('=>GPU{} : Loading checkpoint from local file...'.format(device))
             # 加载模型参数
-            state_dict = torch.load(filename)
+            state_dict = torch.load(filename, map_location=device)
             scalars = self.parse_state_dict(state_dict)
+            del state_dict
+            gc.collect()
             return scalars
         else:
             raise FileExistsError
 
-    def load_url(self, url):
+    def load_url(self, url, device):
         '''Load a module dictionary from url.
 
         Args:
@@ -105,7 +107,7 @@ class CheckpointIO(object):
         print(url)
         print('=> Loading checkpoint from url...')
         # 用pytorch model zoo下载模型
-        state_dict = model_zoo.load_url(url, progress=True)
+        state_dict = model_zoo.load_url(url, progress=True, map_location=device)
         scalars = self.parse_state_dict(state_dict)
         return scalars
 
@@ -115,16 +117,20 @@ class CheckpointIO(object):
         Args:
             state_dict (dict): State dict of model
     '''
+        # 返回冗余下来的键值对
+        scalars = {k: v for k, v in state_dict.items()
+                   if k not in self.module_dict}
         # 把state_dict的内容加载到各个model里
+        # "model":model 
         for k, v in self.module_dict.items():
             if k in state_dict:
                 v.load_state_dict(state_dict[k])
             else:
                 print('Warning: Could not find %s in checkpoint!' % k)
-        # 返回冗余下来的键值对
-        scalars = {k: v for k, v in state_dict.items()
-                   if k not in self.module_dict}
+        
         return scalars
+
+    
 
 
 def is_url(url):

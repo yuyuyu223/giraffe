@@ -11,3 +11,6 @@ out
 _cache_*
 *.jpg
 *.npz
+*.webp
+*.zip
+*.mdb

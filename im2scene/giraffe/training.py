@@ -8,6 +8,7 @@ import torch
 from im2scene.training import BaseTrainer
 from tqdm import tqdm
 import logging
+from torch.nn.parallel import DistributedDataParallel as DDP
 logger_py = logging.getLogger(__name__)
 
 
@@ -29,17 +30,18 @@ class Trainer(BaseTrainer):
 
     def __init__(self, model, optimizer, optimizer_d, device=None,
                  vis_dir=None,
-                 multi_gpu=False, fid_dict={},
+                 multi_gpu=False, fid_dict={},use_DDP=False,
+                 device_ids=None, output_device=None,
                  n_eval_iterations=10,
                  overwrite_visualization=True, **kwargs):
-        print(multi_gpu)
+        # print(multi_gpu)
         self.model = model
         self.optimizer = optimizer
         self.optimizer_d = optimizer_d
         self.device = device
         self.vis_dir = vis_dir
         self.multi_gpu = multi_gpu
-
+        self.use_DDP = use_DDP
         self.overwrite_visualization = overwrite_visualization
         self.fid_dict = fid_dict
         self.n_eval_iterations = n_eval_iterations
@@ -53,6 +55,18 @@ class Trainer(BaseTrainer):
             if self.model.generator_test is not None:
                 self.generator_test = torch.nn.DataParallel(
                     self.model.generator_test)
+            else:
+                self.generator_test = None
+        else:
+            self.generator = self.model.generator
+            self.discriminator = self.model.discriminator
+            self.generator_test = self.model.generator_test
+        
+        if use_DDP:
+            self.generator = DDP(self.model.generator,device_ids=device_ids, output_device=output_device)
+            self.discriminator = DDP(self.model.discriminator,device_ids=device_ids, output_device=output_device)
+            if self.model.generator_test is not None:
+                self.generator_test = DDP(self.model.generator_test,device_ids=device_ids, output_device=output_device)
             else:
                 self.generator_test = None
         else:
@@ -119,7 +133,7 @@ class Trainer(BaseTrainer):
 
         self.optimizer.zero_grad()
 
-        if self.multi_gpu:
+        if self.multi_gpu or self.use_DDP:
             latents = generator.module.get_vis_dict()
             x_fake = generator(**latents)
         else:
@@ -159,7 +173,7 @@ class Trainer(BaseTrainer):
         loss_d_full += reg
 
         with torch.no_grad():
-            if self.multi_gpu:
+            if self.multi_gpu or self.use_DDP:
                 latents = generator.module.get_vis_dict()
                 x_fake = generator(**latents)
             else:
