@@ -11,7 +11,7 @@ from im2scene import config
 
 ############################################################################################
 # 配置文件
-config_path = "./configs/64res/lsunCar_64.yaml"
+config_path = "./configs/64res/cars_64.yaml"
 # 加载配置文件，若没有配置文件就加载默认配置
 cfg = config.load_config(config_path, 'configs/default.yaml')
 # 设置图片保存位置
@@ -28,7 +28,7 @@ config.set_logger(cfg)
 is_cuda = torch.cuda.is_available()
 logger_py.info("CUDA:{}".format(is_cuda))
 # 设置cpu/gpu
-device = torch.device("cuda" if is_cuda else "cpu")
+device = torch.device("cuda" if is_cuda else "cpu",3)
 logger_py.info("we will use %s"%device)
 #############################################################################################
 ## 加载模型
@@ -38,8 +38,8 @@ logger_py.info("switch to eval mode")
 gen.eval()
 # 加载checkpoint
 try:
-    checkpoint_io = CheckpointIO(model=model)
-    checkpoint_io.load("model.pt")
+    checkpoint_io = CheckpointIO(checkpoint_dir=out_dir, model=model)
+    checkpoint_io.load("backup_model_best/1640775020.696839.pt", device=device)
 except Exception as e:
     logger_py.warning("no check point found!")
 
@@ -76,26 +76,31 @@ def make_gernerate_args(n_iter=25, batch_size=1, change=None, device=None):
 
 #############################################################################################
 ## 生成
-img_fake = []
-argsGen = make_gernerate_args(n_iter=60, batch_size=1, change="rotate", device=device)
-for i in tqdm(argsGen):
-    with torch.no_grad():
-        # [batch_size,h,w,3]
-        img_fake.append(gen(**i).cpu())
-# [batch_size*n_iter,h,w,3]
-img_fake = torch.cat(img_fake, dim=0)
-# 将元素值范围界定到[0,1]
-img_fake.clamp_(0., 1.)
-# 图像个数变为batch_size*n_iter
-n_images = img_fake.shape[0]
-# 图像回到uint8
-img_uint8 = (img_fake * 255).cpu().numpy().astype(np.uint8)
+def Generate(num=1):
+    for i in range(num):
+        out_vis_file = os.path.join(out_dir, 'eval_out', 'fid_images%d.jpg'%i)
+        img_fake = []
+        argsGen = make_gernerate_args(n_iter=60, batch_size=1, change="rotate", device=device)
+        for i in tqdm(argsGen):
+            with torch.no_grad():
+                # [batch_size,h,w,3]
+                img_fake.append(gen(**i).cpu())
+        # [batch_size*n_iter,h,w,3]
+        img_fake = torch.cat(img_fake, dim=0)
+        # 将元素值范围界定到[0,1]
+        img_fake.clamp_(0., 1.)
+        # 图像个数变为batch_size*n_iter
+        n_images = img_fake.shape[0]
+        # 图像回到uint8
+        img_uint8 = (img_fake * 255).cpu().numpy().astype(np.uint8)
 
-# use uint for eval to fairly compare
-img_fake = torch.from_numpy(img_uint8).float() / 255.
+        # use uint for eval to fairly compare
+        img_fake = torch.from_numpy(img_uint8).float() / 255.
 
-#######################################################################
-## 保存结果
-logger_py.info("save result to '%s'"%out_dir)
-# 拿出256张图，生成16x16的网格进行可视化展示，保存到fid_images.jpg
-save_image(make_grid(img_fake, nrow=10, pad_value=1.), out_vis_file)
+        #######################################################################
+        ## 保存结果
+        logger_py.info("save result to '%s'"%out_dir)
+        # 拿出256张图，生成16x16的网格进行可视化展示，保存到fid_images.jpg
+        save_image(make_grid(img_fake, nrow=10, pad_value=1.), out_vis_file)
+
+Generate(20)

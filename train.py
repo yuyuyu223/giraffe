@@ -29,13 +29,15 @@ parser.add_argument('--exit-after', type=int, default=-1,
                     help='Checkpoint and exit after specified number of '
                          'seconds with exit code 2.')
 parser.add_argument("--local_rank", default=-1, type=int)
+parser.add_argument("--nproc_per_node", default=1, type=int)
 # 拿出参数集
 args = parser.parse_args()
 # 加载指定的配置文件（指定path，默认path）
 cfg = config.load_config(args.config, 'configs/default.yaml')
 # 可以使用cuda的条件是torch cuda环境正确且命令行no_cuda未开启
 is_cuda = (torch.cuda.is_available() and not args.no_cuda)
-
+# 获取gpu数目
+gpu_c = args.nproc_per_node
 
 
 """
@@ -100,7 +102,7 @@ train_sampler = DistributedSampler(train_dataset)
 
 # 使用dataloader读取数据集
 train_loader = torch.utils.data.DataLoader(
-    train_dataset, batch_size=batch_size, num_workers=n_workers,
+    train_dataset, batch_size=batch_size//gpu_c, num_workers=n_workers,
     pin_memory=True, drop_last=True,
     sampler=train_sampler ## TODO:DDP
 )
@@ -109,39 +111,16 @@ train_loader = torch.utils.data.DataLoader(
 model = config.get_model(cfg, device=device, len_dataset=len(train_dataset))
 
 # DDP将主节点的param和buffer分发到各进程，让他们保持参数一致
-model = DDP(model, device_ids=[local_rank], output_device=local_rank)
-model = model.module
-
-# Initialize training
-# RMSProp优化算法或者是Adam优化算法
-op = optim.RMSprop if cfg['training']['optimizer'] == 'RMSprop' else optim.Adam
-# 一些优化器参数
-optimizer_kwargs = cfg['training']['optimizer_kwargs']
-# 如果模型中有生成器且生成器非空
-if hasattr(model, "generator") and model.generator is not None:
-    # 获取生成器参数
-    parameters_g = model.generator.parameters()
-else:
-    # 获取decoder的参数
-    parameters_g = list(model.decoder.parameters())
-# 定义优化器（优化生成器参数/decoder参数）
-optimizer = op(parameters_g, lr=lr, **optimizer_kwargs)
-# 如果模型中有判别器且判别器非空
-if hasattr(model, "discriminator") and model.discriminator is not None:
-    # 获取判别器参数
-    parameters_d = model.discriminator.parameters()
-    # 定义判别器的优化器
-    optimizer_d = op(parameters_d, lr=lr_d)
-else:
-    optimizer_d = None
+# model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+# model = model.module
 
 # 根据配置文件获取指定模型的训练器
-trainer = config.get_trainer(model, optimizer, optimizer_d, cfg, device=device, 
-                            use_DDP=False, device_ids=[local_rank], output_device=local_rank)
+trainer = config.get_trainer(model, cfg, device=device, 
+                            use_DDP=True, device_ids=[local_rank], output_device=local_rank)
 
 # model checkpoint读取对象
-checkpoint_io = CheckpointIO(out_dir, local_rank, model=model, optimizer=optimizer,
-                             optimizer_d=optimizer_d)
+checkpoint_io = CheckpointIO(out_dir, local_rank, model=model, optimizer=trainer.optimizer,
+                             optimizer_d=trainer.optimizer_d)
 
 
 try:
@@ -165,8 +144,9 @@ if metric_val_best == np.inf or metric_val_best == -np.inf:
 print('Current best validation metric (%s): %.8f'
         % (model_selection_metric, metric_val_best))
 
-# pytorch的logger，将event写入文件
-logger = SummaryWriter(os.path.join(out_dir, 'logs'))
+if is_master:
+    # pytorch的logger，将event写入文件
+    logger = SummaryWriter(os.path.join(out_dir, 'logs'))
 # Shorthands
 # 打印频次
 print_every = cfg['training']['print_every']
@@ -205,10 +185,12 @@ while (True):
     train_loader.sampler.set_epoch(epoch_it)
 
     for batch in train_loader:
+        # print(batch.get('image').shape)
         it += 1
         loss = trainer.train_step(batch, it)
-        for (k, v) in loss.items():
-            logger.add_scalar(k, v, it)
+        if is_master:
+            for (k, v) in loss.items():
+                logger.add_scalar(k, v, it)
         # Print output
         if print_every > 0 and (it % print_every) == 0:
             info_txt = '[Epoch %02d] it=%03d, time=%.3f ,pid=%d'% (

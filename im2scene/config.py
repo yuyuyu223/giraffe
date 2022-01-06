@@ -103,7 +103,7 @@ def set_logger(cfg):
 
 
 # Trainer
-def get_trainer(model, optimizer, optimizer_d, cfg, device, use_DDP=False, device_ids=None, output_device=None):
+def get_trainer(model, cfg, device, use_DDP=False, device_ids=None, output_device=None):
     ''' Returns a trainer instance.
 
     Args:
@@ -118,7 +118,7 @@ def get_trainer(model, optimizer, optimizer_d, cfg, device, use_DDP=False, devic
     set_logger(cfg)
     # 获取指定模型的训练器
     trainer = method_dict[method].config.get_trainer(
-        model, optimizer, optimizer_d, cfg, device, use_DDP=use_DDP, device_ids=device_ids, output_device=output_device)
+        model, cfg, device, use_DDP=use_DDP, device_ids=device_ids, output_device=output_device)
     return trainer
 
 
