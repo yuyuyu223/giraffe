@@ -12,6 +12,7 @@ from im2scene import config
 ############################################################################################
 # 配置文件
 config_path = "./configs/64res/cars_64.yaml"
+model_path = "backup_model_best/1640775020.696839.pt"
 # 加载配置文件，若没有配置文件就加载默认配置
 cfg = config.load_config(config_path, 'configs/default.yaml')
 # 设置图片保存位置
@@ -39,7 +40,7 @@ gen.eval()
 # 加载checkpoint
 try:
     checkpoint_io = CheckpointIO(checkpoint_dir=out_dir, model=model)
-    checkpoint_io.load("backup_model_best/1640775020.696839.pt", device=device)
+    checkpoint_io.load(model_path, device=device)
 except Exception as e:
     logger_py.warning("no check point found!")
 
