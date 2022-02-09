@@ -34,12 +34,7 @@ class Trainer(BaseTrainer):
                  multi_gpu=False, fid_dict={},use_DDP=False,
                  device_ids=None, output_device=None,
                  n_eval_iterations=10,
-<<<<<<< HEAD
                  overwrite_visualization=True, **kwargs):
-=======
-                 overwrite_visualization=True, cfg=None, **kwargs):
-        # print(multi_gpu)
->>>>>>> 4e7deda2d80e327b7acc4d1a77ecb343dfc9b465
         self.model = model
         # self.optimizer = optimizer
         # self.optimizer_d = optimizer_d

@@ -27,15 +27,14 @@ parser.add_argument('--exit-after', type=int, default=-1,
                     help='Checkpoint and exit after specified number of '
                          'seconds with exit code 2.')
 parser.add_argument("--local_rank", default=-1, type=int)
-parser.add_argument("--nproc_per_node", default=1, type=int)
 # 拿出参数集
 args = parser.parse_args()
 # 加载指定的配置文件（指定path，默认path）
 cfg = config.load_config(args.config, 'configs/default.yaml')
 # 可以使用cuda的条件是torch cuda环境正确且命令行no_cuda未开启
 is_cuda = (torch.cuda.is_available() and not args.no_cuda)
-# 获取gpu数目
-gpu_c = args.nproc_per_node
+# 如果cuda可以使用，device为cuda，否则是cpu
+device = torch.device("cuda" if is_cuda else "cpu")
 
 useDDP = False if args.local_rank == -1 else True
 
@@ -60,13 +59,6 @@ if useDDP:
 
 is_master = True if not useDDP or local_rank == 0 else False
 print("是否是主节点:",is_master)
-
-is_master = True if local_rank == 0 else False
-
-# 如果cuda可以使用，device为cuda，否则是cpu
-device = torch.device("cuda" if is_cuda else "cpu",local_rank)
-
-# torch.cuda.set_per_process_memory_fraction(1.0, device)
 
 """
     配置文件读取
@@ -110,7 +102,6 @@ if useDDP:
     train_sampler = DistributedSampler(train_dataset)
 
 # 使用dataloader读取数据集
-<<<<<<< HEAD
 if useDDP:
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=batch_size, num_workers=n_workers,
@@ -161,35 +152,16 @@ else:
 
 # 根据配置文件获取指定模型的训练器
 trainer = config.get_trainer(model, optimizer, optimizer_d, cfg, device=device)
-=======
-train_loader = torch.utils.data.DataLoader(
-    train_dataset, batch_size=batch_size//gpu_c, num_workers=n_workers,
-    pin_memory=True, drop_last=True,
-    sampler=train_sampler ## TODO:DDP
-)
-# 根据配置文件获取模型
-# TODO:DDP
-model = config.get_model(cfg, device=device, len_dataset=len(train_dataset))
-
-# DDP将主节点的param和buffer分发到各进程，让他们保持参数一致
-# model = DDP(model, device_ids=[local_rank], output_device=local_rank)
-# model = model.module
-
-# 根据配置文件获取指定模型的训练器
-trainer = config.get_trainer(model, cfg, device=device, 
-                            use_DDP=True, device_ids=[local_rank], output_device=local_rank)
->>>>>>> 4e7deda2d80e327b7acc4d1a77ecb343dfc9b465
 
 # model checkpoint读取对象
-checkpoint_io = CheckpointIO(out_dir, local_rank, model=model, optimizer=trainer.optimizer,
-                             optimizer_d=trainer.optimizer_d)
-
+checkpoint_io = CheckpointIO(out_dir, model=model, optimizer=optimizer,
+                             optimizer_d=optimizer_d)
 
 
 
 try:
     # 读取checkpoint
-    load_dict = checkpoint_io.load('model.pt', device)
+    load_dict = checkpoint_io.load('model.pt')
     print("Loaded model checkpoint.")
 # 找不到pt文件
 except FileExistsError:
@@ -206,11 +178,9 @@ if metric_val_best == np.inf or metric_val_best == -np.inf:
     metric_val_best = -model_selection_sign * np.inf
 
 print('Current best validation metric (%s): %.8f'
-        % (model_selection_metric, metric_val_best))
-
-if is_master:
-    # pytorch的logger，将event写入文件
-    logger = SummaryWriter(os.path.join(out_dir, 'logs'))
+      % (model_selection_metric, metric_val_best))
+# pytorch的logger，将event写入文件
+logger = SummaryWriter(os.path.join(out_dir, 'logs'))
 # Shorthands
 # 打印频次
 print_every = cfg['training']['print_every']
@@ -221,15 +191,12 @@ validate_every = cfg['training']['validate_every']
 # 可视化频率
 visualize_every = cfg['training']['visualize_every']
 
-# 打印参数个数
+# Print model
 # 统计参数个数
 nparameters = sum(p.numel() for p in model.parameters())
-<<<<<<< HEAD
 # 打印模型
 # logger_py.info(model)
 # 打印参数个数
-=======
->>>>>>> 4e7deda2d80e327b7acc4d1a77ecb343dfc9b465
 logger_py.info('Total number of parameters: %d' % nparameters)
 
 # 统计打印判别器参数个数
@@ -244,10 +211,6 @@ if hasattr(model, "generator") and model.generator is not None:
 
 t0b = time.time()
 
-print("开始训练......")
-
-dist.barrier()
-
 while (True):
     epoch_it += 1
     # TODO: DDP：设置sampler的epoch，
@@ -257,23 +220,22 @@ while (True):
         train_loader.sampler.set_epoch(epoch_it)
 
     for batch in train_loader:
-        # print(batch.get('image').shape)
+
         it += 1
         loss = trainer.train_step(batch, it)
-        if is_master:
-            for (k, v) in loss.items():
-                logger.add_scalar(k, v, it)
+        for (k, v) in loss.items():
+            logger.add_scalar(k, v, it)
         # Print output
         if print_every > 0 and (it % print_every) == 0:
             info_txt = '[Epoch %02d] it=%03d, time=%.3f ,pid=%d'% (
-                epoch_it, it, time.time() - t0b,local_rank)
+                epoch_it, it, time.time() - t0b,dist.get_rank())
             for (k, v) in loss.items():
                 info_txt += ', %s: %.4f' % (k, v)
             logger_py.info(info_txt)
             t0b = time.time()
 
         # # Visualize output
-        if visualize_every > 0 and (it % visualize_every) == 0 and is_master:
+        if visualize_every > 0 and (it % visualize_every) == 0:
             logger_py.info('Visualizing')
             image_grid = trainer.visualize(it=it)
             if image_grid is not None:
@@ -293,7 +255,7 @@ while (True):
                                loss_val_best=metric_val_best)
 
         # Run validation
-        if validate_every > 0 and (it % validate_every) == 0 and (it > 0) and is_master:
+        if validate_every > 0 and (it % validate_every) == 0 and (it > 0):
             print("Performing evaluation step.")
             eval_dict = trainer.evaluate()
             metric_val = eval_dict[model_selection_metric]
@@ -303,17 +265,12 @@ while (True):
             for k, v in eval_dict.items():
                 logger.add_scalar('val/%s' % k, v, it)
 
-<<<<<<< HEAD
             if model_selection_sign * (metric_val - metric_val_best) > 0 and is_master:
-=======
-            if model_selection_sign * (metric_val - metric_val_best) > 0:
->>>>>>> 4e7deda2d80e327b7acc4d1a77ecb343dfc9b465
                 metric_val_best = metric_val
                 logger_py.info('New best model (loss %.4f)' % metric_val_best)
                 checkpoint_io.backup_model_best('model_best.pt')
                 checkpoint_io.save('model_best.pt', epoch_it=epoch_it, it=it,
                                    loss_val_best=metric_val_best)
-            
 
         # Exit if necessary
         if exit_after > 0 and (time.time() - t0) >= exit_after:
@@ -322,5 +279,3 @@ while (True):
                 checkpoint_io.save('model.pt', epoch_it=epoch_it, it=it,
                                 loss_val_best=metric_val_best)
             exit(3)
-        
-        dist.barrier()
