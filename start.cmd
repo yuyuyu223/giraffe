@@ -1,0 +1,1 @@
+python train.py --config ./configs/64res/cats_64_pretrained.yaml

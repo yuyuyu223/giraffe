@@ -97,7 +97,7 @@ def set_logger(cfg):
     )
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter('[(levelname)s] %(message)s')
+    console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
     console_handler.setFormatter(console_formatter)
     logging.getLogger('').addHandler(console_handler)
 

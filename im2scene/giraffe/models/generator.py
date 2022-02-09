@@ -86,6 +86,8 @@ class Generator(nn.Module):
     def forward(self, batch_size=32, latent_codes=None, camera_matrices=None,
                 transformations=None, bg_rotation=None, mode="training", it=0,
                 return_alpha_map=False,
+                return_feature_map=False,
+                return_all=False,
                 not_render_background=False,
                 only_render_background=False):
         # 如果潜在编码为空则生成
@@ -107,6 +109,21 @@ class Generator(nn.Module):
                 mode=mode, it=it, return_alpha_map=True,
                 not_render_background=not_render_background)
             return alpha_map
+        elif return_feature_map:
+            rgb_v = self.volume_render_image(
+                latent_codes, camera_matrices, transformations, bg_rotation,
+                mode=mode, it=it, return_alpha_map=False,
+                not_render_background=not_render_background)
+            rgb_v = nn.InstanceNorm2d(32)(rgb_v)
+            return rgb_v
+        elif return_all:
+            rgb_v, alpha_map = self.volume_render_image(
+                latent_codes, camera_matrices, transformations, bg_rotation,
+                mode=mode, it=it, return_alpha_map=True,
+                not_render_background=not_render_background)
+            if self.neural_renderer is not None:
+                rgb = self.neural_renderer(rgb_v)
+            return rgb_v, alpha_map, rgb
         else:
             rgb_v = self.volume_render_image(
                 latent_codes, camera_matrices, transformations, bg_rotation,

@@ -34,8 +34,8 @@ out_vis_file = os.path.join(out_dir, 'fid_images.jpg')
 # 加载模型
 model = config.get_model(cfg, device=device)
 # 加载checkpoint
-checkpoint_io = CheckpointIO(out_dir, model=model)
-checkpoint_io.load(cfg['test']['model_file'])
+checkpoint_io = CheckpointIO("./chkpts", model=model)
+checkpoint_io.load("model.pt")
 
 
 # Generate
