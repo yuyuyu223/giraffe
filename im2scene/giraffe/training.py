@@ -8,6 +8,8 @@ import torch
 from im2scene.training import BaseTrainer
 from tqdm import tqdm
 import logging
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.optim as optim
 logger_py = logging.getLogger(__name__)
 
 
@@ -27,18 +29,24 @@ class Trainer(BaseTrainer):
             the visualization files
     '''
 
-    def __init__(self, model, optimizer, optimizer_d, device=None,
+    def __init__(self, model, device=None,
                  vis_dir=None,
-                 multi_gpu=False, fid_dict={},
+                 multi_gpu=False, fid_dict={},use_DDP=False,
+                 device_ids=None, output_device=None,
                  n_eval_iterations=10,
+<<<<<<< HEAD
                  overwrite_visualization=True, **kwargs):
+=======
+                 overwrite_visualization=True, cfg=None, **kwargs):
+        # print(multi_gpu)
+>>>>>>> 4e7deda2d80e327b7acc4d1a77ecb343dfc9b465
         self.model = model
-        self.optimizer = optimizer
-        self.optimizer_d = optimizer_d
+        # self.optimizer = optimizer
+        # self.optimizer_d = optimizer_d
         self.device = device
         self.vis_dir = vis_dir
         self.multi_gpu = multi_gpu
-
+        self.use_DDP = use_DDP
         self.overwrite_visualization = overwrite_visualization
         self.fid_dict = fid_dict
         self.n_eval_iterations = n_eval_iterations
@@ -58,6 +66,44 @@ class Trainer(BaseTrainer):
             self.generator = self.model.generator
             self.discriminator = self.model.discriminator
             self.generator_test = self.model.generator_test
+        
+        if use_DDP:
+            self.generator = DDP(self.model.generator,device_ids=device_ids, output_device=output_device)
+            self.discriminator = DDP(self.model.discriminator,device_ids=device_ids, output_device=output_device)
+            if self.model.generator_test is not None:
+                self.generator_test = DDP(self.model.generator_test,device_ids=device_ids, output_device=output_device)
+            else:
+                self.generator_test = None
+        else:
+            self.generator = self.model.generator
+            self.discriminator = self.model.discriminator
+            self.generator_test = self.model.generator_test
+        
+        # 学习率
+        lr = cfg['training']['learning_rate']
+        # 判别器学习率
+        lr_d = cfg['training']['learning_rate_d']
+
+        op = optim.RMSprop if cfg['training']['optimizer'] == 'RMSprop' else optim.Adam
+        # 一些优化器参数
+        optimizer_kwargs = cfg['training']['optimizer_kwargs']
+        # 如果模型中有生成器且生成器非空
+        if hasattr(self, "generator") and self.generator is not None:
+            # 获取生成器参数
+            parameters_g = self.generator.parameters()
+        else:
+            # 获取decoder的参数
+            parameters_g = list(self.decoder.parameters())
+        # 定义优化器（优化生成器参数/decoder参数）
+        self.optimizer = op(parameters_g, lr=lr, **optimizer_kwargs)
+        # 如果模型中有判别器且判别器非空
+        if hasattr(self, "discriminator") and self.discriminator is not None:
+            # 获取判别器参数
+            parameters_d = model.discriminator.parameters()
+            # 定义判别器的优化器
+            self.optimizer_d = op(parameters_d, lr=lr_d)
+        else:
+            self.optimizer_d = None
 
         if vis_dir is not None and not os.path.exists(vis_dir):
             os.makedirs(vis_dir)
@@ -118,7 +164,7 @@ class Trainer(BaseTrainer):
 
         self.optimizer.zero_grad()
 
-        if self.multi_gpu:
+        if self.multi_gpu or self.use_DDP:
             latents = generator.module.get_vis_dict()
             x_fake = generator(**latents)
         else:
@@ -158,7 +204,7 @@ class Trainer(BaseTrainer):
         loss_d_full += reg
 
         with torch.no_grad():
-            if self.multi_gpu:
+            if self.multi_gpu or self.use_DDP:
                 latents = generator.module.get_vis_dict()
                 x_fake = generator(**latents)
             else:

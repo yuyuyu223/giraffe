@@ -165,13 +165,13 @@ class ImagesDataset(data.Dataset):
 
         import time
         t0 = time.time()
-        print('Start loading file addresses ...')
+        # print('Start loading file addresses ...')
         # 获取图片列表
         images = glob.glob(dataset_folder)
         # 随机打乱图片
         random.shuffle(images)
         t = time.time() - t0
-        print('done! time:', t)
+        # print('done! time:', t)
         print("Number of images found: %d" % len(images))
 
         self.images = images
